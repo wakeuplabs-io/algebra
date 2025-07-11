@@ -48,3 +48,4 @@ fnv = { version = "1.0", default-features = false }
 default = []
 std = [ "ark-std/std", "ark-ff/std", "ark-serialize/std" ]
 parallel = [ "std", "rayon", "ark-std/parallel", "ark-serialize/parallel" ]
+only-arithmetic-backend = []

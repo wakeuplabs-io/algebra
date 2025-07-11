@@ -102,7 +102,6 @@ pub trait BnConfig: 'static + Sized {
         MillerLoopOutput(f)
     }
 
-    #[allow(clippy::let_and_return)]
     fn final_exponentiation(f: MillerLoopOutput<Bn<Self>>) -> Option<PairingOutput<Bn<Self>>> {
         // Easy part: result = elt^((q^6-1)*(q^2+1)).
         // Follows, e.g., Beuchat et al page 9, by computing result as follows:
@@ -191,12 +190,12 @@ impl<P: BnConfig> Bn<P> {
                 c2.mul_assign_by_fp(&p.y);
                 c1.mul_assign_by_fp(&p.x);
                 f.mul_by_014(&c0, &c1, &c2);
-            },
+            }
             TwistType::D => {
                 c0.mul_assign_by_fp(&p.y);
                 c1.mul_assign_by_fp(&p.x);
                 f.mul_by_034(&c0, &c1, &c2);
-            },
+            }
         }
     }
 

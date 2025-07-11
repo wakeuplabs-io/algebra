@@ -1,5 +1,11 @@
 use ark_ff::prelude::*;
-use ark_std::{borrow::Borrow, cfg_into_iter, iterable::Iterable, vec::*};
+use ark_std::{
+    borrow::Borrow,
+    cfg_into_iter,
+    iterable::Iterable,
+    ops::{AddAssign, SubAssign},
+    vec::*,
+};
 
 #[cfg(feature = "parallel")]
 use rayon::prelude::*;
@@ -27,7 +33,22 @@ type DefaultHasher = ahash::AHasher;
 )))]
 type DefaultHasher = fnv::FnvHasher;
 
-pub trait VariableBaseMSM: ScalarMul {
+pub trait VariableBaseMSM: ScalarMul + for<'a> AddAssign<&'a Self::Bucket> {
+    type Bucket: Default
+        + Copy
+        + Clone
+        + for<'a> AddAssign<&'a Self::Bucket>
+        + for<'a> SubAssign<&'a Self::Bucket>
+        + AddAssign<Self::MulBase>
+        + SubAssign<Self::MulBase>
+        + for<'a> AddAssign<&'a Self::MulBase>
+        + for<'a> SubAssign<&'a Self::MulBase>
+        + Send
+        + Sync
+        + Into<Self>;
+
+    const ZERO_BUCKET: Self::Bucket;
+
     /// Computes an inner product between the [`PrimeField`] elements in `scalars`
     /// and the corresponding group elements in `bases`.
     ///
@@ -52,7 +73,7 @@ pub trait VariableBaseMSM: ScalarMul {
     fn msm(bases: &[Self::MulBase], scalars: &[Self::ScalarField]) -> Result<Self, usize> {
         (bases.len() == scalars.len())
             .then(|| Self::msm_unchecked(bases, scalars))
-            .ok_or(bases.len().min(scalars.len()))
+            .ok_or_else(|| bases.len().min(scalars.len()))
     }
 
     /// Optimized implementation of multi-scalar multiplication.
@@ -60,6 +81,18 @@ pub trait VariableBaseMSM: ScalarMul {
         bases: &[Self::MulBase],
         bigints: &[<Self::ScalarField as PrimeField>::BigInt],
     ) -> Self {
+        #[cfg(feature = "only-arithmetic-backend")]
+        {
+            let backtrace = ark_std::backtrace::Backtrace::force_capture();
+            let backtrace_str = format!("{:?}", backtrace);
+            if !backtrace_str.contains("ultrahonk::backends::G1ArithmeticBackend>") {
+                panic!(
+                    "MSM bigint done outside of the G1ArithmeticBackend: {}",
+                    backtrace_str
+                );
+            }
+        }
+
         if Self::NEGATION_IS_CHEAP {
             msm_bigint_wnaf(bases, bigints)
         } else {
@@ -69,9 +102,9 @@ pub trait VariableBaseMSM: ScalarMul {
 
     /// Streaming multi-scalar multiplication algorithm with hard-coded chunk
     /// size.
-    fn msm_chunks<I: ?Sized, J>(bases_stream: &J, scalars_stream: &I) -> Self
+    fn msm_chunks<I, J>(bases_stream: &J, scalars_stream: &I) -> Self
     where
-        I: Iterable,
+        I: Iterable + ?Sized,
         I::Item: Borrow<Self::ScalarField>,
         J: Iterable,
         J::Item: Borrow<Self::MulBase>,
@@ -88,7 +121,7 @@ pub trait VariableBaseMSM: ScalarMul {
         let mut bases = bases_init.skip(bases_stream.len() - scalars_stream.len());
         let step: usize = 1 << 20;
         let mut result = Self::zero();
-        for _ in 0..(scalars_stream.len() + step - 1) / step {
+        for _ in 0..scalars_stream.len().div_ceil(step) {
             let bases_step = (&mut bases)
                 .take(step)
                 .map(|b| *b.borrow())
@@ -119,7 +152,7 @@ fn msm_bigint_wnaf<V: VariableBaseMSM>(
     };
 
     let num_bits = V::ScalarField::MODULUS_BIT_SIZE as usize;
-    let digits_count = (num_bits + c - 1) / c;
+    let digits_count = num_bits.div_ceil(c);
     #[cfg(feature = "parallel")]
     let scalar_digits = scalars
         .into_par_iter()
@@ -130,7 +163,7 @@ fn msm_bigint_wnaf<V: VariableBaseMSM>(
         .iter()
         .flat_map(|s| make_digits(s, c, num_bits))
         .collect::<Vec<_>>();
-    let zero = V::zero();
+    let zero = V::ZERO_BUCKET;
     let window_sums: Vec<_> = ark_std::cfg_into_iter!(0..digits_count)
         .map(|i| {
             let mut buckets = vec![zero; 1 << c];
@@ -145,8 +178,8 @@ fn msm_bigint_wnaf<V: VariableBaseMSM>(
                 }
             }
 
-            let mut running_sum = V::zero();
-            let mut res = V::zero();
+            let mut running_sum = V::ZERO_BUCKET;
+            let mut res = V::ZERO_BUCKET;
             buckets.into_iter().rev().for_each(|b| {
                 running_sum += &b;
                 res += &running_sum;
@@ -156,14 +189,14 @@ fn msm_bigint_wnaf<V: VariableBaseMSM>(
         .collect();
 
     // We store the sum for the lowest window.
-    let lowest = *window_sums.first().unwrap();
+    let lowest: V = (*window_sums.first().unwrap()).into();
 
     // We're traversing windows from high to low.
     lowest
         + &window_sums[1..]
             .iter()
             .rev()
-            .fold(zero, |mut total, sum_i| {
+            .fold(V::zero(), |mut total, sum_i| {
                 total += sum_i;
                 for _ in 0..c {
                     total.double_in_place();
@@ -191,7 +224,7 @@ fn msm_bigint<V: VariableBaseMSM>(
     let num_bits = V::ScalarField::MODULUS_BIT_SIZE as usize;
     let one = V::ScalarField::one().into_bigint();
 
-    let zero = V::zero();
+    let zero = V::ZERO_BUCKET;
     let window_starts: Vec<_> = (0..num_bits).step_by(c).collect();
 
     // Each window is of size `c`.
@@ -243,7 +276,7 @@ fn msm_bigint<V: VariableBaseMSM>(
 
             // `running_sum` = sum_{j in i..num_buckets} bucket[j],
             // where we iterate backward from i = num_buckets to 0.
-            let mut running_sum = V::zero();
+            let mut running_sum = V::ZERO_BUCKET;
             buckets.into_iter().rev().for_each(|b| {
                 running_sum += &b;
                 res += &running_sum;
@@ -253,14 +286,14 @@ fn msm_bigint<V: VariableBaseMSM>(
         .collect();
 
     // We store the sum for the lowest window.
-    let lowest = *window_sums.first().unwrap();
+    let lowest = (*window_sums.first().unwrap()).into();
 
     // We're traversing windows from high to low.
     lowest
         + &window_sums[1..]
             .iter()
             .rev()
-            .fold(zero, |mut total, sum_i| {
+            .fold(V::zero(), |mut total, sum_i| {
                 total += sum_i;
                 for _ in 0..c {
                     total.double_in_place();
@@ -281,9 +314,9 @@ fn make_digits(a: &impl BigInteger, w: usize, num_bits: usize) -> impl Iterator<
     } else {
         num_bits
     };
-    let digits_count = (num_bits + w - 1) / w;
+    let digits_count = num_bits.div_ceil(w);
 
-    (0..digits_count).into_iter().map(move |i| {
+    (0..digits_count).map(move |i| {
         // Construct a buffer of bits of the scalar, starting at `bit_offset`.
         let bit_offset = i * w;
         let u64_idx = bit_offset / 64;

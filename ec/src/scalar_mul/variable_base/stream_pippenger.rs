@@ -78,7 +78,7 @@ impl<G: VariableBaseMSM> HashMapPippenger<G> {
         Self {
             buffer: HashMap::with_capacity_and_hasher(
                 max_msm_buffer,
-                core::hash::BuildHasherDefault::<DefaultHasher>::default(),
+                core::hash::BuildHasherDefault::default(),
             ),
             result: G::zero(),
             buf_size: max_msm_buffer,
@@ -99,7 +99,7 @@ impl<G: VariableBaseMSM> HashMapPippenger<G> {
             .or_insert(G::ScalarField::zero());
         *entry += *scalar.borrow();
         if self.buffer.len() == self.buf_size {
-            let bases = self.buffer.keys().cloned().collect::<Vec<_>>();
+            let bases = self.buffer.keys().copied().collect::<Vec<_>>();
             let scalars = self
                 .buffer
                 .values()
@@ -114,7 +114,7 @@ impl<G: VariableBaseMSM> HashMapPippenger<G> {
     #[inline(always)]
     pub fn finalize(mut self) -> G {
         if !self.buffer.is_empty() {
-            let bases = self.buffer.keys().cloned().collect::<Vec<_>>();
+            let bases = self.buffer.keys().copied().collect::<Vec<_>>();
             let scalars = self
                 .buffer
                 .values()

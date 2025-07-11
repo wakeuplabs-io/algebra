@@ -20,12 +20,16 @@ pub use affine::*;
 mod group;
 pub use group::*;
 
+mod bucket;
+pub use bucket::Bucket;
+
 mod serialization_flags;
 pub use serialization_flags::*;
 
 /// Constants and convenience functions that collectively define the [Short Weierstrass model](https://www.hyperelliptic.org/EFD/g1p/auto-shortw.html)
-/// of the curve. In this model, the curve equation is `y² = x³ + a * x + b`,
-/// for constants `a` and `b`.
+/// of the curve.
+///
+/// In this model, the curve equation is `y² = x³ + a * x + b`, for constants `a` and `b`.
 pub trait SWCurveConfig: super::CurveConfig {
     /// Coefficient `a` of the curve equation.
     const COEFF_A: Self::BaseField;
@@ -105,7 +109,7 @@ pub trait SWCurveConfig: super::CurveConfig {
     ) -> Result<Projective<Self>, usize> {
         (bases.len() == scalars.len())
             .then(|| VariableBaseMSM::msm_unchecked(bases, scalars))
-            .ok_or(bases.len().min(scalars.len()))
+            .ok_or_else(|| bases.len().min(scalars.len()))
     }
 
     /// If uncompressed, serializes both x and y coordinates as well as a bit for whether it is
@@ -131,7 +135,7 @@ pub trait SWCurveConfig: super::CurveConfig {
             Compress::No => {
                 x.serialize_with_mode(&mut writer, compress)?;
                 y.serialize_with_flags(&mut writer, flags)
-            },
+            }
         }
     }
 
@@ -160,22 +164,22 @@ pub trait SWCurveConfig: super::CurveConfig {
                         } else {
                             (x, neg_y, flags)
                         }
-                    },
+                    }
                 }
-            },
+            }
             Compress::No => {
                 let x: Self::BaseField =
                     CanonicalDeserialize::deserialize_with_mode(&mut reader, compress, validate)?;
                 let (y, flags): (_, SWFlags) =
                     CanonicalDeserializeWithFlags::deserialize_with_flags(&mut reader)?;
                 (x, y, flags)
-            },
+            }
         };
         if flags.is_infinity() {
-            Ok(Affine::<Self>::identity())
+            Ok(Affine::identity())
         } else {
-            let point = Affine::<Self>::new_unchecked(x, y);
-            if let Validate::Yes = validate {
+            let point = Affine::new_unchecked(x, y);
+            if validate == Validate::Yes {
                 point.check()?;
             }
             Ok(point)

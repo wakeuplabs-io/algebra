@@ -19,7 +19,7 @@ use ark_ff::{fields::Field, AdditiveGroup, PrimeField, ToConstraintField, Unifor
 use educe::Educe;
 use zeroize::Zeroize;
 
-use super::{Projective, SWCurveConfig, SWFlags};
+use super::{bucket::Bucket, Projective, SWCurveConfig, SWFlags};
 use crate::AffineRepr;
 
 /// Affine coordinates for a point on an elliptic curve in short Weierstrass
@@ -101,7 +101,6 @@ impl<P: SWCurveConfig> Affine<P> {
     ///
     /// If and only if `greatest` is set will the lexicographically
     /// largest y-coordinate be selected.
-    #[allow(dead_code)]
     pub fn get_point_from_x_unchecked(x: P::BaseField, greatest: bool) -> Option<Self> {
         Self::get_ys_from_x_unchecked(x).map(|(smaller, larger)| {
             if greatest {
@@ -137,15 +136,15 @@ impl<P: SWCurveConfig> Affine<P> {
 
     /// Checks if `self` is a valid point on the curve.
     pub fn is_on_curve(&self) -> bool {
-        if !self.infinity {
+        if self.infinity {
+            true
+        } else {
             // Rust does not optimise away addition with zero
             let mut x3b = P::add_b(self.x.square() * self.x);
             if !P::COEFF_A.is_zero() {
                 x3b += P::mul_by_a(self.x);
             };
             self.y.square() == x3b
-        } else {
-            true
         }
     }
 
@@ -156,6 +155,40 @@ impl<P: SWCurveConfig> Affine<P> {
             SWFlags::YIsPositive
         } else {
             SWFlags::YIsNegative
+        }
+    }
+
+    pub fn double_to_bucket(&self) -> Bucket<P> {
+        if self.infinity {
+            Bucket::ZERO
+        } else {
+            // https://www.hyperelliptic.org/EFD/g1p/auto-shortw-xyzz.html#doubling-mdbl-2008-s-1
+            // U = 2*Y1
+            let u = self.y.double();
+            // V = U^2
+            let v = u.square();
+            // W = U*V
+            let w = u * &v;
+            // S = X1*V
+            let s = self.x * &v;
+            // M = 3*X1^2+a
+            let mut m = self.x.square();
+            m += m.double();
+            if !P::COEFF_A.is_zero() {
+                m += P::COEFF_A;
+            }
+            // X3 = M^2-2*S
+            let x = m.square() - s.double();
+            // Y3 = M*(S-X3)-W*Y1
+            let y = m * (s - x) - w * self.y;
+            Bucket {
+                x,
+                y,
+                // ZZ3 = V
+                zz: v,
+                // ZZZ3 = W
+                zzz: w,
+            }
         }
     }
 }
@@ -201,7 +234,7 @@ impl<P: SWCurveConfig> AffineRepr for Affine<P> {
     type Group = Projective<P>;
 
     fn xy(&self) -> Option<(Self::BaseField, Self::BaseField)> {
-        (!self.infinity).then(|| (self.x, self.y))
+        (!self.infinity).then_some((self.x, self.y))
     }
 
     #[inline]
@@ -238,7 +271,6 @@ impl<P: SWCurveConfig> AffineRepr for Affine<P> {
 
     /// Multiplies this element by the cofactor and output the
     /// resulting projective element.
-    #[must_use]
     fn mul_by_cofactor_to_group(&self) -> Self::Group {
         P::mul_affine(self, Self::Config::COFACTOR)
     }
@@ -266,6 +298,18 @@ impl<P: SWCurveConfig> Neg for Affine<P> {
 impl<P: SWCurveConfig, T: Borrow<Self>> Add<T> for Affine<P> {
     type Output = Projective<P>;
     fn add(self, other: T) -> Projective<P> {
+        #[cfg(feature = "only-arithmetic-backend")]
+        {
+            let backtrace = ark_std::backtrace::Backtrace::force_capture();
+            let backtrace_str = format!("{:?}", backtrace);
+            if !backtrace_str.contains("ultrahonk::backends::G1ArithmeticBackend>") {
+                panic!(
+                    "Addition between affine points done outside of the G1ArithmeticBackend: {}",
+                    backtrace_str
+                );
+            }
+        }
+
         // TODO implement more efficient formulae when z1 = z2 = 1.
         let mut copy = self.into_group();
         copy += other.borrow();
@@ -276,6 +320,18 @@ impl<P: SWCurveConfig, T: Borrow<Self>> Add<T> for Affine<P> {
 impl<P: SWCurveConfig> Add<Projective<P>> for Affine<P> {
     type Output = Projective<P>;
     fn add(self, other: Projective<P>) -> Projective<P> {
+        #[cfg(feature = "only-arithmetic-backend")]
+        {
+            let backtrace = ark_std::backtrace::Backtrace::force_capture();
+            let backtrace_str = format!("{:?}", backtrace);
+            if !backtrace_str.contains("ultrahonk::backends::G1ArithmeticBackend>") {
+                panic!(
+                    "Addition between affine points done outside of the G1ArithmeticBackend: {}",
+                    backtrace_str
+                );
+            }
+        }
+
         other + self
     }
 }
@@ -283,6 +339,18 @@ impl<P: SWCurveConfig> Add<Projective<P>> for Affine<P> {
 impl<'a, P: SWCurveConfig> Add<&'a Projective<P>> for Affine<P> {
     type Output = Projective<P>;
     fn add(self, other: &'a Projective<P>) -> Projective<P> {
+        #[cfg(feature = "only-arithmetic-backend")]
+        {
+            let backtrace = ark_std::backtrace::Backtrace::force_capture();
+            let backtrace_str = format!("{:?}", backtrace);
+            if !backtrace_str.contains("ultrahonk::backends::G1ArithmeticBackend>") {
+                panic!(
+                    "Addition between affine points done outside of the G1ArithmeticBackend: {}",
+                    backtrace_str
+                );
+            }
+        }
+
         *other + self
     }
 }
@@ -290,6 +358,18 @@ impl<'a, P: SWCurveConfig> Add<&'a Projective<P>> for Affine<P> {
 impl<P: SWCurveConfig, T: Borrow<Self>> Sub<T> for Affine<P> {
     type Output = Projective<P>;
     fn sub(self, other: T) -> Projective<P> {
+        #[cfg(feature = "only-arithmetic-backend")]
+        {
+            let backtrace = ark_std::backtrace::Backtrace::force_capture();
+            let backtrace_str = format!("{:?}", backtrace);
+            if !backtrace_str.contains("ultrahonk::backends::G1ArithmeticBackend>") {
+                panic!(
+                    "Subtraction between affine points done outside of the G1ArithmeticBackend: {}",
+                    backtrace_str
+                );
+            }
+        }
+
         let mut copy = self.into_group();
         copy -= other.borrow();
         copy
@@ -299,6 +379,18 @@ impl<P: SWCurveConfig, T: Borrow<Self>> Sub<T> for Affine<P> {
 impl<P: SWCurveConfig> Sub<Projective<P>> for Affine<P> {
     type Output = Projective<P>;
     fn sub(self, other: Projective<P>) -> Projective<P> {
+        #[cfg(feature = "only-arithmetic-backend")]
+        {
+            let backtrace = ark_std::backtrace::Backtrace::force_capture();
+            let backtrace_str = format!("{:?}", backtrace);
+            if !backtrace_str.contains("ultrahonk::backends::G1ArithmeticBackend>") {
+                panic!(
+                    "Subtraction between affine points done outside of the G1ArithmeticBackend: {}",
+                    backtrace_str
+                );
+            }
+        }
+
         self + (-other)
     }
 }
@@ -306,6 +398,18 @@ impl<P: SWCurveConfig> Sub<Projective<P>> for Affine<P> {
 impl<'a, P: SWCurveConfig> Sub<&'a Projective<P>> for Affine<P> {
     type Output = Projective<P>;
     fn sub(self, other: &'a Projective<P>) -> Projective<P> {
+        #[cfg(feature = "only-arithmetic-backend")]
+        {
+            let backtrace = ark_std::backtrace::Backtrace::force_capture();
+            let backtrace_str = format!("{:?}", backtrace);
+            if !backtrace_str.contains("ultrahonk::backends::G1ArithmeticBackend>") {
+                panic!(
+                    "Subtraction between affine points done outside of the G1ArithmeticBackend: {}",
+                    backtrace_str
+                );
+            }
+        }
+
         self + (-*other)
     }
 }
@@ -330,12 +434,12 @@ impl<P: SWCurveConfig, T: Borrow<P::ScalarField>> Mul<T> for Affine<P> {
 // coordinates as X/Z^2, Y/Z^3.
 impl<P: SWCurveConfig> From<Projective<P>> for Affine<P> {
     #[inline]
-    fn from(p: Projective<P>) -> Affine<P> {
+    fn from(p: Projective<P>) -> Self {
         if p.is_zero() {
-            Affine::identity()
+            Self::identity()
         } else if p.z.is_one() {
             // If Z is one, the point is already normalized.
-            Affine::new_unchecked(p.x, p.y)
+            Self::new_unchecked(p.x, p.y)
         } else {
             // Z is nonzero, so it must have an inverse in a field.
             let zinv = p.z.inverse().unwrap();
@@ -347,7 +451,7 @@ impl<P: SWCurveConfig> From<Projective<P>> for Affine<P> {
             // Y/Z^3
             let y = p.y * &(zinv_squared * &zinv);
 
-            Affine::new_unchecked(x, y)
+            Self::new_unchecked(x, y)
         }
     }
 }

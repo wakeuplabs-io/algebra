@@ -126,12 +126,12 @@ impl<P: SWUConfig> MapToCurve<Projective<P>> for SWUMap<P> {
         let y = if gx1_square { y1 } else { y2 };
 
         let x_affine = num_x / div;
-        let y_affine = if parity(&y) != parity(&element) {
-            -y
-        } else {
+        let y_affine = if parity(&y) == parity(&element) {
             y
+        } else {
+            -y
         };
-        let point_on_curve = Affine::<P>::new_unchecked(x_affine, y_affine);
+        let point_on_curve = Affine::new_unchecked(x_affine, y_affine);
         debug_assert!(
             point_on_curve.is_on_curve(),
             "swu mapped to a point off the curve"
@@ -175,8 +175,8 @@ mod test {
     #[derive(ark_ff::MontConfig)]
     #[modulus = "127"]
     #[generator = "6"]
-    pub struct F127Config;
-    pub type F127 = Fp64<MontBackend<F127Config, 1>>;
+    pub(crate) struct F127Config;
+    pub(crate) type F127 = Fp64<MontBackend<F127Config, 1>>;
 
     const F127_ONE: F127 = MontFp!("1");
 
@@ -270,7 +270,7 @@ mod test {
         let mut map_range: Vec<Affine<TestSWUMapToCurveConfig>> = vec![];
         for current_field_element in 0..127 {
             let element = F127::from(current_field_element as u64);
-            map_range.push(SWUMap::<TestSWUMapToCurveConfig>::map_to_curve(element).unwrap());
+            map_range.push(SWUMap::map_to_curve(element).unwrap());
         }
 
         let mut counts =
