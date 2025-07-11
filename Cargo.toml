@@ -74,11 +74,23 @@ proc-macro2 = "1.0"
 quote = "1.0"
 syn = "2.0"
 
+
 [profile.release]
-opt-level = 3
-lto = "thin"
-incremental = true
-panic = 'abort'
+# strip = "none"         # keep debug info for profiling
+strip = true             # remove debug info
+debug = false            # no debug data
+codegen-units = 1        # prefer efficiency to compile time
+panic = "abort"          # use simple panics
+lto = true               # link time optimization
+rpath = false            # no run-time search path
+debug-assertions = false # prune debug assertions
+incremental = false      # no incremental builds
+opt-level = 'z'          # optimize for size
+
+# but do optimize all the other dependencies
+[profile.release.package."*"]
+codegen-units = 1 # better optimizations
+opt-level = "z"
 
 [profile.bench]
 opt-level = 3
