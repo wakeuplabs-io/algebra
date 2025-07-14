@@ -1,6 +1,6 @@
 [package]
 name = "ark-curve-constraint-tests"
-version.workspace = true
+version = "0.5.0"
 authors.workspace = true
 description = "A library for testing constraints for finite fields, elliptic curves, and pairings"
 homepage.workspace = true

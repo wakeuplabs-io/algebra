@@ -2,7 +2,7 @@
 name = "ark-serialize"
 description = "A library for serializing types in the arkworks ecosystem"
 documentation = "https://docs.rs/ark-serialize/"
-version.workspace = true
+version = "0.5.0"
 authors.workspace = true
 homepage.workspace = true
 repository.workspace = true

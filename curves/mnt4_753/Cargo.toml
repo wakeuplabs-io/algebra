@@ -1,6 +1,6 @@
 [package]
 name = "ark-mnt4-753"
-version.workspace = true
+version = "0.5.0"
 authors.workspace = true
 description = "The MNT4-753 pairing-friendly elliptic curve"
 homepage.workspace = true

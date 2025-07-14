@@ -1,6 +1,6 @@
 [package]
 name = "ark-bw6-767"
-version.workspace = true
+version = "0.5.0"
 authors.workspace = true
 description = "The BW6-767 pairing-friendly elliptic curve"
 homepage.workspace = true

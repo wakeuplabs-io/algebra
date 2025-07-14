@@ -1,6 +1,6 @@
 [package]
 name = "ark-ed-on-mnt4-298"
-version.workspace = true
+version = "0.5.0"
 authors.workspace = true
 description = "A Twisted Edwards curve defined over the scalar field of the MNT4-298 curve"
 homepage.workspace = true

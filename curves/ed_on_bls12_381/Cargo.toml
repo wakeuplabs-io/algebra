@@ -1,6 +1,6 @@
 [package]
 name = "ark-ed-on-bls12-381"
-version.workspace = true
+version = "0.5.0"
 authors.workspace = true
 description = "A Twisted Edwards curve defined over the scalar field of the BLS12-381 curve"
 homepage.workspace = true
